@@ -3,19 +3,20 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
+// Model User: Untuk login dan data akun (NextAuth)
 model User {
   id            String    @id @default(cuid())
   name          String?
   email         String?   @unique
   emailVerified DateTime?
-  image         String?   // Foto profil dari Google
-  role          String    @default("USER") // USER / ADMIN
-
+  image         String?
   password      String?
+  role          String    @default("USER") // USER / ADMIN
   
   accounts      Account[]
   sessions      Session[]
@@ -33,12 +34,12 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String?
-  access_token      String?
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String?
+  id_token          String? @db.Text
   session_state     String?
  
   createdAt DateTime @default(now())
@@ -81,12 +82,12 @@ model Order {
   semester      String
 
   // Detail Tugas
-  taskLink      String
+  taskLink      String   @db.Text
   ssoUsername   String?
   ssoPassword   String? 
   mataKuliah    String
   judulTugas    String
-  instruksi     String
+  instruksi     String   @db.Text
   
   status        String   @default("PENDING")
   price         Int      @default(10000)
