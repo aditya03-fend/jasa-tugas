@@ -63,18 +63,11 @@ export default function LayoutWrapper({
                 </Link>
               </>
             ) : (
-              <>
-                <Link href="/login">
-                  <Button variant="ghost" className="font-medium text-zinc-600 hover:text-zinc-900">
+                <Link href="/login"> 
+                  <Button className="bg-black text-white hover:bg-zinc-800 rounded-full px-5">
                     Masuk
                   </Button>
                 </Link>
-                <Link href="/register"> 
-                  <Button className="bg-black text-white hover:bg-zinc-800 rounded-full px-5">
-                    Daftar
-                  </Button>
-                </Link>
-              </>
             )}
           </div>
           
