@@ -69,7 +69,7 @@ export default function LayoutWrapper({
                     Masuk
                   </Button>
                 </Link>
-                <Link href="/login"> 
+                <Link href="/register"> 
                   <Button className="bg-black text-white hover:bg-zinc-800 rounded-full px-5">
                     Daftar
                   </Button>

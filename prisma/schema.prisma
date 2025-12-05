@@ -8,20 +8,18 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// Model User: Untuk login dan data akun (NextAuth)
 model User {
   id            String    @id @default(cuid())
   name          String?
+  username      String?   @unique 
   email         String?   @unique
   emailVerified DateTime?
   image         String?
   password      String?
-  role          String    @default("USER") // USER / ADMIN
+  role          String    @default("USER")
   
   accounts      Account[]
   sessions      Session[]
-  
-  // Relasi ke aplikasi Jasa Tugas kita
   orders        Order[]
   
   createdAt     DateTime  @default(now())
@@ -69,33 +67,24 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// --- APLIKASI JASA TUGAS ---
-
 model Order {
   id            String   @id @default(cuid())
-  
-  // Data Mahasiswa
   namaMhs       String
   nim           String
   universitas   String
   prodi         String
   semester      String
-
-  // Detail Tugas
   taskLink      String   @db.Text
   ssoUsername   String?
   ssoPassword   String? 
   mataKuliah    String
   judulTugas    String
   instruksi     String   @db.Text
-  
   status        String   @default("PENDING")
   price         Int      @default(10000)
   paymentProof  String?
-  
   userId        String
   user          User     @relation(fields: [userId], references: [id])
-  
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
