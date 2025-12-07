@@ -18,28 +18,36 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
+// --- PENTING: Force Dynamic agar data selalu fresh ---
+export const dynamic = "force-dynamic";
+
 export default async function OrderStatusPage({ params }: { params: Promise<{ id: string }> }) {
   // 1. Cek User Login
   const session = await auth();
   if (!session?.user) redirect("/login");
 
   // 2. Await params (Wajib di Next.js 15)
-  const { id } = await params;
+  // Pastikan kita menunggu promise params selesai
+  const resolvedParams = await params;
+  const orderId = resolvedParams.id;
 
   // 3. Ambil Detail Order
   const order = await db.order.findFirst({
     where: { 
-      userId: (session.user as any).id,
+      id: orderId, 
+      userId: (session.user as any).id 
     },
   });
 
+  // Jika tidak ketemu, return 404
   if (!order) return notFound();
 
   // 4. Hitung Posisi Antrean & Estimasi
   let queuePosition = 0;
   let daysEstimation = 0;
 
-  if (order.status !== "PENDING") {
+  // Hanya hitung antrean jika status bukan PENDING/DRAFT
+  if (order.status !== "PENDING" && order.status !== "DRAFT") {
     const count = await db.order.count({
       where: {
         status: { in: ["PAID", "PROCESSED"] },
@@ -93,12 +101,13 @@ export default async function OrderStatusPage({ params }: { params: Promise<{ id
                 <div>
                   <p className="text-zinc-400 text-sm font-medium uppercase tracking-wider mb-1">Status Pengerjaan</p>
                   <h2 className="text-2xl font-bold flex items-center gap-2">
+                    {order.status === "DRAFT" && "Draft (Belum Selesai)"}
                     {order.status === "PENDING" && "Menunggu Pembayaran"}
-                    {order.status === "PAID" && "Sedang Dikerjakan"}
+                    {(order.status === "PAID" || order.status === "PROCESSED") && "Sedang Dikerjakan"}
                     {order.status === "COMPLETED" && "Selesai"}
                   </h2>
                 </div>
-                {order.status === "PAID" && (
+                {(order.status === "PAID" || order.status === "PROCESSED") && (
                    <div className="bg-blue-600 px-3 py-1 rounded-full text-xs font-bold">
                      ON PROCESS
                    </div>
@@ -107,11 +116,17 @@ export default async function OrderStatusPage({ params }: { params: Promise<{ id
             </div>
 
             <CardContent className="p-6">
-               {order.status === "PENDING" ? (
+               {(order.status === "PENDING" || order.status === "DRAFT") ? (
                  <div className="text-center py-6">
-                   <p className="mb-4 text-zinc-600">Pesanan ini belum dibayar. Silakan lakukan pembayaran agar kami bisa mulai mengerjakan.</p>
-                   <Link href={`/payment/${order.id}`}>
-                      <Button className="bg-blue-600 hover:bg-blue-700 w-full">Bayar Sekarang (Rp {order.price.toLocaleString()})</Button>
+                   <p className="mb-4 text-zinc-600">
+                     {order.status === "DRAFT" ? "Pesanan ini masih draft." : "Pesanan ini belum dibayar."} 
+                     <br/>Silakan lanjutkan pembayaran agar kami bisa mulai mengerjakan.
+                   </p>
+                   {/* Kita arahkan ke /order jika draft/pending agar user bisa review ulang & bayar */}
+                   <Link href={`/order`}> 
+                      <Button className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto">
+                        Lanjut Pembayaran (Rp {order.price.toLocaleString()})
+                      </Button>
                    </Link>
                  </div>
                ) : (
@@ -125,7 +140,7 @@ export default async function OrderStatusPage({ params }: { params: Promise<{ id
                         <p className="text-3xl font-bold text-blue-600">{daysEstimation} Hari</p>
                     </div>
                     <div className="col-span-2 bg-blue-50/50 p-4 rounded-lg text-sm text-blue-900 border border-blue-100 flex gap-3">
-                        <Clock className="w-5 h-5 shrink-0 text-blue-600" />
+                        <Clock className="w-5 h-5 flex-shrink-0 text-blue-600" />
                         <p>
                           Kami mengerjakan 20 tugas/hari. Karena kamu urutan ke-<strong>{queuePosition}</strong>, 
                           tugasmu diprediksi selesai pada tanggal <strong>{new Date(Date.now() + daysEstimation * 24 * 60 * 60 * 1000).toLocaleDateString("id-ID", { day: 'numeric', month: 'long' })}</strong>.
@@ -159,9 +174,9 @@ export default async function OrderStatusPage({ params }: { params: Promise<{ id
               <Separator />
 
               <div>
-                <p className="text-sm font-medium text-zinc-500 mb-2">Instruksi / Catatan</p>
-                <div className="bg-zinc-50 p-4 rounded-md text-sm leading-relaxed border border-zinc-100">
-                  {order.instruksi || "Tidak ada instruksi khusus."}
+                <p className="text-sm font-medium text-zinc-500 mb-2">Jawaban yang Diinginkan</p>
+                <div className="bg-zinc-50 p-4 rounded-md text-sm leading-relaxed border border-zinc-100 whitespace-pre-wrap">
+                  {order.instruksi || "Tidak ada detail jawaban khusus."}
                 </div>
               </div>
 
@@ -243,20 +258,13 @@ export default async function OrderStatusPage({ params }: { params: Promise<{ id
                         </span>
                     </div>
                     
-                    {order.status === "PAID" && (
+                    {(order.status === "PAID" || order.status === "PROCESSED") && (
                         <div className="bg-green-50 text-green-700 p-2 rounded text-xs text-center font-medium flex items-center justify-center gap-1">
                             <CheckCircle2 className="w-3 h-3" /> Lunas
                         </div>
                     )}
                 </CardContent>
             </Card>
-
-            <div className="text-center">
-                <Button variant="ghost" className="text-xs text-zinc-400 hover:text-zinc-600">
-                    <MoreHorizontal className="w-3 h-3 mr-1" /> Laporkan Masalah
-                </Button>
-            </div>
-
         </div>
 
       </div>
