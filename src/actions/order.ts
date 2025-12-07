@@ -2,6 +2,7 @@
 
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { revalidatePath } from "next/cache"; // Penting untuk refresh halaman
 
 export async function createOrder(data: any) {
   const session = await auth();
@@ -9,8 +10,6 @@ export async function createOrder(data: any) {
     return { error: "Anda harus login terlebih dahulu untuk memesan." };
   }
 
-  // Validasi: Jika DRAFT, validasi bisa lebih longgar (opsional)
-  // Tapi untuk simpelnya, kita minta data minimal tetap terisi
   if (!data.taskLink || !data.namaMhs) {
     return { error: "Data tugas tidak lengkap. Harap isi form dengan benar." };
   }
@@ -29,16 +28,9 @@ export async function createOrder(data: any) {
         ssoPassword: data.ssoPassword || "",
         mataKuliah: data.mataKuliah,
         judulTugas: data.judulTugas,
-        
-        // REVISI: Field 'instruksi' kita gunakan untuk menyimpan 'Jawaban'
-        instruksi: data.instruksi || "", 
-        
-        // Status dinamis (bisa DRAFT atau PENDING/PAID)
+        instruksi: data.instruksi || "",
         status: data.status || "PENDING", 
-        
-        // Simpan harga (termasuk kode unik jika ada)
         price: data.price || 10000,
-        
         paymentProof: data.status === "PAID" ? "TEST-AUTO-PAYMENT" : null,
       },
     });
@@ -61,5 +53,33 @@ export async function getQueueInfo() {
     return { nextQueueNumber, estimatedDays };
   } catch (error) {
     return { nextQueueNumber: 1, estimatedDays: 1 };
+  }
+}
+
+// --- FUNGSI BARU: RETRY PAYMENT ---
+export async function retryPayment(orderId: string) {
+  const session = await auth();
+  if (!session?.user) return { error: "Unauthorized" };
+
+  try {
+    // Update status kembali ke PAID agar masuk antrean admin lagi
+    await db.order.update({
+      where: { 
+        id: orderId,
+        userId: (session.user as any).id // Pastikan pemilik order
+      },
+      data: { 
+        status: "PAID",
+        updatedAt: new Date() // Refresh timestamp
+      }
+    });
+    
+    // Refresh halaman terkait
+    revalidatePath(`/dashboard/status/${orderId}`);
+    revalidatePath(`/dashboard`);
+    
+    return { success: true };
+  } catch (error) {
+    return { error: "Gagal update status." };
   }
 }

@@ -9,8 +9,9 @@ import {
   Clock, 
   CheckCircle2, 
   AlertCircle, 
-  ChevronRight,
-  Filter
+  ChevronRight, 
+  Filter, 
+  XCircle 
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -18,15 +19,19 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-// Definisi Props untuk menangkap searchParams (Next.js 15 Style)
+// Props untuk menangkap searchParams (Next.js 15 Style)
 type Props = {
   searchParams: Promise<{ filter?: string }>;
 };
 
 export default async function DashboardPage(props: Props) {
-  // 1. Cek User Login
+  // 1. Cek User Login (Server Side Security)
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  
+  // Jika user belum login, lempar ke halaman login
+  if (!session?.user) {
+    redirect("/login");
+  }
 
   // 2. Tangkap Filter dari URL
   const searchParams = await props.searchParams;
@@ -36,37 +41,39 @@ export default async function DashboardPage(props: Props) {
   let statusCondition: any = {};
 
   if (filter === "pending") {
-    statusCondition = { status: "PENDING" };
+    // Tampilkan PENDING dan UNPAID (Ditolak) di tab "Bayar"
+    statusCondition = { status: { in: ["PENDING", "UNPAID"] } };
   } else if (filter === "process") {
-    // Proses biasanya mencakup yang sudah bayar (PAID) atau sedang dikerjakan (PROCESSED)
+    // Proses mencakup yang sudah bayar (PAID) atau sedang dikerjakan (PROCESSED)
     statusCondition = { status: { in: ["PAID", "PROCESSED"] } };
   } else if (filter === "completed") {
     statusCondition = { status: "COMPLETED" };
   }
   // Jika filter == 'all', statusCondition tetap kosong (ambil semua)
 
-  // 4. Ambil Orderan dari Database
+  // 4. Ambil Orderan User dari Database
   const orders = await db.order.findMany({
     where: {
+      // Menggunakan casting (as any) untuk bypass error TypeScript pada properti id
       userId: (session.user as any).id,
-      ...statusCondition, // Masukkan kondisi filter di sini
+      ...statusCondition, 
     },
     orderBy: {
       createdAt: "desc",
     },
   });
 
-  // Helper untuk tombol filter
+  // Helper Component untuk Tombol Filter
   const FilterButton = ({ label, value, icon: Icon }: { label: string, value: string, icon?: any }) => {
     const isActive = filter === value;
     return (
       <Link href={`/dashboard?filter=${value}`}>
-        <Button
+        <Button 
           variant={isActive ? "default" : "outline"} 
           size="sm"
           className={cn(
             "rounded-full transition-all", 
-            isActive ? "bg-zinc-900 text-white" : "text-zinc-600 border-zinc-300"
+            isActive ? "bg-zinc-900 text-white" : "text-zinc-600 border-zinc-300 hover:bg-zinc-100"
           )}
         >
           {Icon && <Icon className="w-3 h-3 mr-2" />}
@@ -101,7 +108,7 @@ export default async function DashboardPage(props: Props) {
       <div className="flex flex-wrap items-center gap-2 pb-2 overflow-x-auto scrollbar-none">
         <FilterButton label="Semua" value="all" icon={Filter} />
         <FilterButton label="Sedang Proses" value="process" icon={Clock} />
-        <FilterButton label="Belum Bayar" value="pending" icon={AlertCircle} />
+        <FilterButton label="Bayar / Cek" value="pending" icon={AlertCircle} />
         <FilterButton label="Selesai" value="completed" icon={CheckCircle2} />
       </div>
 
@@ -118,7 +125,7 @@ export default async function DashboardPage(props: Props) {
         </div>
 
         {orders.length === 0 ? (
-          // KONDISI: JIKA DATA KOSONG
+          // KONDISI: JIKA BELUM ADA ORDERAN
           <Card className="border-dashed border-2 border-zinc-200 bg-zinc-50/50 shadow-none">
             <CardContent className="flex flex-col items-center justify-center py-16 text-center">
               <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center border border-zinc-100 shadow-sm mb-4">
@@ -141,18 +148,31 @@ export default async function DashboardPage(props: Props) {
           // KONDISI: ADA DATA ORDERAN
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {orders.map((order) => {
-              // Semua kartu mengarah ke detail
+              // Semua kartu mengarah ke Halaman Detail agar seragam
               const hrefTarget = `/dashboard/status/${order.id}`;
+
+              // Menentukan Warna Garis Status & Style Card
+              let statusColorClass = "bg-green-500"; // Default (Completed)
+              let cardBorderClass = "border-zinc-200 hover:border-zinc-300";
+
+              if (order.status === "PENDING") {
+                statusColorClass = "bg-yellow-400";
+              } else if (order.status === "UNPAID") {
+                statusColorClass = "bg-red-600";
+                cardBorderClass = "border-red-200 bg-red-50/30 hover:border-red-300";
+              } else if (order.status === "PAID" || order.status === "PROCESSED") {
+                statusColorClass = "bg-blue-500";
+              }
 
               return (
                 <Link href={hrefTarget} key={order.id} className="group">
-                  <Card className="h-full border-zinc-200 hover:border-zinc-300 hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden relative">
+                  <Card className={cn(
+                      "h-full border hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden relative",
+                      cardBorderClass
+                    )}>
                     
                     {/* Status Bar di Kiri Card */}
-                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${
-                      order.status === "PENDING" ? "bg-yellow-400" : 
-                      order.status === "PAID" ? "bg-blue-500" : "bg-green-500"
-                    }`} />
+                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${statusColorClass}`} />
 
                     <CardHeader className="pb-3 pl-6">
                       <div className="flex justify-between items-start mb-1">
@@ -162,7 +182,12 @@ export default async function DashboardPage(props: Props) {
                             Menunggu Bayar
                           </Badge>
                         )}
-                        {order.status === "PAID" && (
+                        {order.status === "UNPAID" && (
+                          <Badge variant="destructive" className="bg-red-100 text-red-700 border-red-200 hover:bg-red-200">
+                            Pembayaran Ditolak
+                          </Badge>
+                        )}
+                        {(order.status === "PAID" || order.status === "PROCESSED") && (
                           <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
                             Sedang Dikerjakan
                           </Badge>
@@ -203,14 +228,19 @@ export default async function DashboardPage(props: Props) {
                         </div>
                       </div>
 
+                      {/* FOOTER CARD */}
                       <div className="mt-5 pt-4 border-t border-zinc-100 flex items-center justify-between">
                         {order.status === "PENDING" ? (
                           <div className="flex items-center text-red-600 text-xs font-medium animate-pulse">
                              <AlertCircle className="w-3 h-3 mr-1" /> Segera Bayar
                           </div>
+                        ) : order.status === "UNPAID" ? (
+                          <div className="flex items-center text-red-700 text-xs font-bold">
+                             <XCircle className="w-3 h-3 mr-1" /> Cek Pembayaran
+                          </div>
                         ) : (
                           <div className="flex items-center text-zinc-500 text-xs font-medium">
-                             <CheckCircle2 className="w-3 h-3 mr-1 text-green-500" /> Terkonfirmasi
+                             Lihat Detail
                           </div>
                         )}
                         

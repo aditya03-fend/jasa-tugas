@@ -2,177 +2,158 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { 
-  DollarSign, 
-  Clock, 
-  ArrowUpRight,
-  MoreHorizontal
-} from "lucide-react";
-
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { MoreHorizontal, ArrowLeft, Filter } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
-export default async function AdminDashboardPage() {
+// Props untuk menangkap searchParams (Next.js 15 Style)
+type Props = {
+  searchParams: Promise<{ filter?: string }>;
+};
+
+export default async function AdminOrdersPage(props: Props) {
   // 1. Cek Sesi Admin
   const session = await auth();
-  if ((session?.user as any)?.role !== "ADMIN") return redirect("/dashboard");
+  
+  // Menggunakan casting (as any) untuk bypass error TypeScript pada properti role
+  if ((session?.user as any)?.role !== "ADMIN") {
+    return redirect("/dashboard");
+  }
 
-  // 2. Ambil Data Statistik secara Paralel
-  // Hanya ambil data yang relevan dengan pengerjaan (Active / Paid)
-  const [activeCount, totalRevenueData, queueOrders] = await Promise.all([
-     // Hitung Order Aktif (PAID/PROCESSED)
-     db.order.count({ 
-        where: { status: { in: ["PAID", "PROCESSED"] } } 
-     }),
-     // Hitung Total Pendapatan (Hanya yang valid: PAID/PROCESSED/COMPLETED)
-     // Tetap hitung COMPLETED untuk revenue agar data keuangan akurat
-     db.order.aggregate({ 
-        _sum: { price: true }, 
-        where: { status: { in: ["PAID", "PROCESSED", "COMPLETED"] } } 
-     }),
-     // Ambil Orderan Antrean (PAID/PROCESSED), urutkan dari yang terlama (Antrean 1)
-     db.order.findMany({ 
-        where: { status: { in: ["PAID", "PROCESSED"] } },
-        orderBy: { createdAt: "asc" }, 
-        take: 10,
-        include: { user: true } 
-     })
-  ]);
+  // 2. Tangkap Filter dari URL
+  const searchParams = await props.searchParams;
+  const filter = searchParams.filter || "all"; // default: all
 
-  const totalRevenue = totalRevenueData._sum.price || 0;
+  // 3. Logika Query Database berdasarkan Filter
+  // Jika filter = 'today', kita cari yang statusnya PAID/PROCESSED (Harus dikerjakan)
+  // Jika filter = 'all', kita ambil semua
+  const whereClause = filter === "today" 
+    ? { status: { in: ["PAID", "PROCESSED"] } } 
+    : {}; // Kosong berarti ambil semua
+
+  // 4. Ambil Data dari Database
+  const orders = await db.order.findMany({
+    where: whereClause,
+    orderBy: { createdAt: "desc" },
+    include: { user: true }
+  });
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       
-      {/* HEADER */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard Admin</h2>
-          <p className="text-zinc-500">Ringkasan performa joki tugas hari ini.</p>
+      {/* --- HEADER & FILTER --- */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Link href="/admin">
+            <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
+          </Link>
+          <h1 className="text-2xl font-bold tracking-tight">Manajemen Pesanan</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" disabled>Download Laporan</Button>
-          <Button className="bg-zinc-900 text-white hover:bg-zinc-800">
-            Refresh Data
-          </Button>
-        </div>
-      </div>
-
-      {/* STATS CARDS */}
-      <div className="grid gap-4 md:grid-cols-2">
         
-        {/* Card 1: Pendapatan */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Pendapatan</CardTitle>
-            <DollarSign className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">Rp {totalRevenue.toLocaleString("id-ID")}</div>
-            <p className="text-xs text-zinc-500">Akumulasi semua order valid</p>
-          </CardContent>
-        </Card>
-
-        {/* Card 2: Order Aktif */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Antrean Pengerjaan</CardTitle>
-            <Clock className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeCount}</div>
-            <p className="text-xs text-zinc-500">Tugas yang harus diselesaikan</p>
-          </CardContent>
-        </Card>
-
-      </div>
-
-      {/* QUEUE ORDERS TABLE */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Antrean Pengerjaan</CardTitle>
-            <CardDescription>
-              Daftar tugas aktif yang harus segera dikerjakan (Prioritas Waktu).
-            </CardDescription>
-          </div>
-          <Link href="/admin/orders">
-            <Button variant="ghost" size="sm" className="gap-1">
-              Lihat Semua <ArrowUpRight className="w-4 h-4" />
+        {/* NAVIGASI FILTER */}
+        <div className="flex items-center bg-white border border-zinc-200 rounded-lg p-1 shadow-sm">
+          <Link href="/admin/orders?filter=all">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className={cn(
+                "rounded-md text-sm font-medium transition-all", 
+                filter === "all" ? "bg-zinc-100 text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+              )}
+            >
+              Semua Orderan
             </Button>
           </Link>
+          <Link href="/admin/orders?filter=today">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className={cn(
+                "rounded-md text-sm font-medium transition-all gap-2", 
+                filter === "today" ? "bg-blue-50 text-blue-700 shadow-sm border border-blue-100" : "text-zinc-500 hover:text-zinc-900"
+              )}
+            >
+              <Filter className="w-3 h-3" />
+              Kerjakan Hari Ini
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* --- TABEL PESANAN --- */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            {filter === "today" ? "Antrean Pengerjaan (Active)" : "Semua Riwayat Pesanan"} 
+            <span className="ml-2 text-zinc-400 font-normal text-sm">({orders.length} Data)</span>
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[50px]">No.</TableHead>
+                <TableHead>Tanggal</TableHead>
                 <TableHead>Customer</TableHead>
-                <TableHead>Tugas</TableHead>
+                <TableHead>Detail Tugas</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Harga</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {queueOrders.length === 0 ? (
+              {orders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24 text-zinc-500">
-                    Tidak ada antrean. Semua tugas sudah selesai! 🎉
+                  <TableCell colSpan={5} className="text-center h-32 text-zinc-500">
+                    {filter === "today" ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <span className="text-lg font-medium text-zinc-900">Tidak ada tugas aktif!</span>
+                        <span>Semua tugas sudah selesai atau belum ada yang bayar.</span>
+                      </div>
+                    ) : (
+                      "Belum ada data pesanan sama sekali."
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (
-                queueOrders.map((order, index) => (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-bold text-center">
-                      {index + 1}
+                orders.map((order) => (
+                  // Baris akan berwarna merah tipis jika status UNPAID
+                  <TableRow key={order.id} className={order.status === 'UNPAID' ? "bg-red-50/50 hover:bg-red-50" : ""}>
+                    <TableCell className="font-mono text-xs text-zinc-500">
+                        {new Date(order.createdAt).toLocaleDateString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </TableCell>
                     <TableCell>
                       <div className="font-medium">{order.namaMhs}</div>
-                      <div className="text-xs text-zinc-500">{order.user.email}</div>
+                      <div className="text-xs text-zinc-500">{order.nim}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium truncate max-w-[200px]">{order.judulTugas}</div>
+                      <div className="font-medium max-w-[200px] truncate" title={order.judulTugas}>{order.judulTugas}</div>
                       <div className="text-xs text-zinc-500">{order.mataKuliah}</div>
                     </TableCell>
                     <TableCell>
-                      <Badge 
-                        variant="secondary" 
-                        className="bg-blue-100 text-blue-800 hover:bg-blue-100"
-                      >
-                        {order.status}
-                      </Badge>
+                       <Badge variant="outline" className={
+                          order.status === "PENDING" ? "bg-yellow-50 text-yellow-700 border-yellow-200" :
+                          order.status === "UNPAID" ? "bg-red-100 text-red-700 border-red-200 font-bold hover:bg-red-200" : // Status Merah
+                          order.status === "DRAFT" ? "bg-zinc-100 text-zinc-600 border-zinc-200" :
+                          (order.status === "PAID" || order.status === "PROCESSED") ? "bg-blue-50 text-blue-700 border-blue-200" :
+                          "bg-green-50 text-green-700 border-green-200"
+                        }>
+                          {order.status === "PAID" || order.status === "PROCESSED" ? "PERLU DIKERJAKAN" : 
+                           order.status === "UNPAID" ? "DITOLAK / INVALID" : 
+                           order.status}
+                        </Badge>
                     </TableCell>
-                    <TableCell className="text-right font-medium">
-                      Rp {order.price.toLocaleString("id-ID")}
-                    </TableCell>
-                    <TableCell>
+                    <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
+                          <Button variant="ghost" size="sm"><MoreHorizontal className="w-4 h-4" /></Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Aksi</DropdownMenuLabel>
+                          <DropdownMenuLabel>Menu</DropdownMenuLabel>
                           <DropdownMenuItem asChild>
-                            <Link href={`/admin/orders/${order.id}`}>Lihat Detail & Proses</Link>
+                            <Link href={`/admin/orders/${order.id}`}>Buka Detail</Link>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -184,7 +165,6 @@ export default async function AdminDashboardPage() {
           </Table>
         </CardContent>
       </Card>
-      
     </div>
   );
 }
